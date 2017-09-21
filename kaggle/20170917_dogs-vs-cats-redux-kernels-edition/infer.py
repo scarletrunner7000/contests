@@ -1,11 +1,12 @@
 import argparse
 from datetime import datetime
+import os
 import string
 import sys
 import time
 
 import numpy as np
-import matplotlib.pyplot as plot
+# import matplotlib.pyplot as plot
 
 import chainer
 import chainer.functions as F
@@ -59,6 +60,8 @@ def main():
     parser.add_argument(
         '--model', choices=('ssd300', 'ssd512'), default='ssd300')
     parser.add_argument('--split', choices=('train', 'test'), default='train')
+    parser.add_argument('--data_dir', default='data')
+    parser.add_argument('--out', default='result')
     parser.add_argument('--gpu', type=int, default=-1)
     parser.add_argument('--batchsize', type=int, default=16)
     parser.add_argument('--pretrained_model', default='voc0712')
@@ -79,10 +82,10 @@ def main():
         chainer.cuda.get_device(args.gpu).use()
         model.to_gpu()
 
-    train = Dataset(begin=args.begin, end=args.end)
+    train = Dataset(data_dir=args.data_dir, begin=args.begin, end=args.end)
     train_iter = chainer.iterators.SerialIterator(
         train, args.batchsize, repeat=False, shuffle=False)
-    test = Dataset(split='test', begin=args.begin, end=args.end)
+    test = Dataset(split='test', data_dir=args.data_dir, begin=args.begin, end=args.end)
     test_iter = chainer.iterators.SerialIterator(
         test, args.batchsize, repeat=False, shuffle=False)
 
@@ -100,6 +103,10 @@ def main():
     pred_bboxes, pred_labels, pred_scores = pred_values
     gt_labels, = gt_values
 
+    out_dir = os.path.abspath(os.path.expanduser(args.out))
+    if not os.path.isdir(out_dir):
+        os.makedirs(out_dir)
+
     if args.split == 'train':
         for pred_label_list, gt_label, i in zip(
                 pred_labels, gt_labels, range(len(train))):
@@ -110,16 +117,17 @@ def main():
                 idx // 2, pred_prob, gt_label, res_txt))
     else:
         d_str = datetime.now().strftime('%Y%m%d%H%M%S')
-        file_name = 'result/submission_{}_{:>5}_{:>5}.csv'.format(
+        file_name = 'submission_{}_{:>05d}_{:>05d}.csv'.format(
             d_str, test.begin, test.end)
+        file_path = os.path.join(out_dir, file_name)
         data = np.zeros((len(test), 2))
         for pred_label_list, i in zip(pred_labels, range(len(test))):
             idx = i + test.begin
             pred_prob = predict_probability(pred_label_list)
             data[i, 0] = idx + 1
             data[i, 1] = pred_prob
-            np.savetxt(file_name, data[:(i + 1)], delimiter=',',
-                       header='id,label', fmt='%d')
+            np.savetxt(file_path, data[:(i + 1)], delimiter=',',
+                       header='id,label', fmt='%.10f')
 
 
 if __name__ == '__main__':
